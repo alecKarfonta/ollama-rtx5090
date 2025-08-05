@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # Ollama API - RTX 5090 Optimized with OpenAI API compatibility
+  ollama:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ollama-rtx5090
+    hostname: ollama
+    ports:
+      - "8600:11434"    # Ollama API on port 666
+    runtime: nvidia
+    shm_size: '16gb'
+    volumes:
+      - ~/.ollama:/root/.ollama  # Persistent model storage
+    environment:
+      # RTX 5090 Optimizations
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=0
+      - OLLAMA_KV_CACHE_TYPE=q8_0          # KV cache quantization for performance
+      - OLLAMA_NUM_PARALLEL=1              # Single-user optimization
+      - OLLAMA_FLASH_ATTENTION=1           # Enable Flash Attention
+      - OLLAMA_MAX_VRAM=32000000000        # Use 30GB of 32GB VRAM
+      - OLLAMA_GPU_LAYERS=999              # Force ALL layers to GPU
+      - OLLAMA_NUM_GPU=1                   # Use 1 GPU
+      - GPU_MEMORY_UTILIZATION=0.98        # Use 98% of available GPU memory
+      - OLLAMA_GPU_MEMORY_UTILIZATION=0.98 # Alternative GPU memory setting
+      - OLLAMA_LLM_LIBRARY=cuda            # Force CUDA backend
+      - OLLAMA_SCHED_SPREAD=false          # Disable spreading across devices
+      - CUDA_MEMORY_FRACTION=0.98          # Use 98% of CUDA memory
+      - OLLAMA_HOST=0.0.0.0:11434          # Listen on all interfaces
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  ollama_data:
