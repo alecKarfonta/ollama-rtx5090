@@ -1,0 +1,17 @@
+[Unit]
+Description=GPU-Chassis Fan Controller
+After=multi-user.target
+Wants=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/home/alec/git/ollama-rtx5090/gpu-fan-controller.sh
+ExecStop=/bin/bash -c 'for i in {1..7}; do echo 5 > /sys/class/hwmon/hwmon4/pwm${i}_enable; done'
+Restart=always
+RestartSec=10
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

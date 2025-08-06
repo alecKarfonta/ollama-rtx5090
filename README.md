@@ -121,6 +121,54 @@ Check container logs:
 docker compose logs -f ollama
 ```
 
+## Dynamic Fan Control
+
+This deployment includes **intelligent chassis fan control** that automatically adjusts fan speeds based on GPU temperature and load.
+
+### Features
+- **Temperature Zones**: Scales fan speed from 30% to 100% based on GPU temperature
+- **Real-time Monitoring**: Updates every 5 seconds  
+- **Emergency Cooling**: Maximum fans at 70°C+ GPU temperature
+- **Automatic Restoration**: Returns to motherboard control on service stop
+
+### Temperature Response
+- **Under 50°C**: Chassis fans match GPU fan percentage
+- **50-59°C**: Scale 50-75% based on temperature  
+- **60-69°C**: Scale 75-100% based on temperature
+- **70°C+**: 🔥 **Maximum chassis fans** (100%)
+
+### Service Management
+```bash
+# Check fan controller status
+sudo systemctl status gpu-fan-controller.service
+
+# View live fan control logs
+sudo journalctl -u gpu-fan-controller.service -f
+
+# Stop fan controller (returns to auto control)
+sudo systemctl stop gpu-fan-controller.service
+
+# Restart fan controller
+sudo systemctl restart gpu-fan-controller.service
+```
+
+### Manual Fan Control
+```bash
+# Set all chassis fans to 90%
+for i in {1..7}; do 
+  echo 1 | sudo tee /sys/class/hwmon/hwmon4/pwm${i}_enable > /dev/null
+  echo 230 | sudo tee /sys/class/hwmon/hwmon4/pwm${i} > /dev/null
+done
+
+# Return to automatic motherboard control
+for i in {1..7}; do 
+  echo 5 | sudo tee /sys/class/hwmon/hwmon4/pwm${i}_enable > /dev/null
+done
+
+# Check current fan speeds
+sensors | grep fan
+```
+
 ## Troubleshooting
 
 ### GPU Not Detected
