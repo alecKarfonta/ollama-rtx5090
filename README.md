@@ -110,13 +110,27 @@ The deployment is optimized for RTX 5090:
 
 ## Monitoring
 
-Check GPU usage:
+### GPU Usage Monitoring
+**btop with GPU Support:**
 ```bash
-nvidia-smi
-watch -n 1 nvidia-smi
+# Launch btop with GPU monitoring
+./launch-btop-gpu.sh
+
+# In btop, press '5' to show/hide RTX 5090 monitoring
+# Shows: GPU utilization, power draw, VRAM usage, temperature
 ```
 
-Check container logs:
+**Alternative GPU monitoring:**
+```bash
+# NVIDIA system management interface
+nvidia-smi
+watch -n 1 nvidia-smi
+
+# nvtop - dedicated GPU monitoring tool
+nvtop
+```
+
+**Container logs:**
 ```bash
 docker compose logs -f ollama
 ```
