@@ -1,10 +1,15 @@
 #!/bin/bash
 
 # GPU-Chassis Fan Controller
-# Automatically adjusts chassis fan speed based on GPU temperature and fan speed
+# Automatically adjusts chassis fan speed based on GPU power consumption with temperature safety override
 
 # Configuration
-GPU_TEMP_THRESHOLD=70          # Temperature threshold in Celsius
+GPU_TEMP_THRESHOLD=70          # Emergency temperature threshold in Celsius
+GPU_POWER_IDLE=30              # Idle power consumption in Watts
+GPU_POWER_LOW=150              # Low load threshold in Watts
+GPU_POWER_MEDIUM=300           # Medium load threshold in Watts  
+GPU_POWER_HIGH=450             # High load threshold in Watts
+GPU_POWER_MAX=550              # Maximum expected power in Watts
 MAX_CHASSIS_FAN_SPEED=255      # Maximum PWM value (100%)
 MIN_CHASSIS_FAN_SPEED=77       # Minimum PWM value (~30%)
 HWMON_PATH="/sys/class/hwmon/hwmon4"
@@ -40,24 +45,44 @@ get_chassis_fan_speeds() {
     echo "${speeds[@]}"
 }
 
-# Function to calculate scaled fan speed based on GPU metrics
+# Function to calculate scaled fan speed based on GPU power consumption and temperature
 calculate_fan_speed() {
     local gpu_temp=$1
     local gpu_fan=$2
+    local gpu_power=$3
     
+    # Convert power to integer (remove decimal part)
+    gpu_power=${gpu_power%.*}
+    
+    # Emergency temperature override - always max fans if too hot
     if [[ $gpu_temp -ge $GPU_TEMP_THRESHOLD ]]; then
-        echo $MAX_CHASSIS_FAN_SPEED  # Max speed when over threshold
-    elif [[ $gpu_temp -ge 60 ]]; then
-        # Scale between 75-100% for temps 60-69°C
-        local scale_factor=$(( (gpu_temp - 60) * 25 / 10 + 75 ))
+        echo $MAX_CHASSIS_FAN_SPEED  # Max speed when over temperature threshold
+        return
+    fi
+    
+    # Power-based fan scaling
+    if [[ $gpu_power -ge $GPU_POWER_MAX ]]; then
+        # 550W+: Maximum cooling (100%)
+        echo $MAX_CHASSIS_FAN_SPEED
+    elif [[ $gpu_power -ge $GPU_POWER_HIGH ]]; then
+        # 450-549W: Scale 80-100% based on power
+        local scale_factor=$(( (gpu_power - GPU_POWER_HIGH) * 20 / (GPU_POWER_MAX - GPU_POWER_HIGH) + 80 ))
         echo $(( scale_factor * 255 / 100 ))
-    elif [[ $gpu_temp -ge 50 ]]; then
-        # Scale between 50-75% for temps 50-59°C
-        local scale_factor=$(( (gpu_temp - 50) * 25 / 10 + 50 ))
+    elif [[ $gpu_power -ge $GPU_POWER_MEDIUM ]]; then
+        # 300-449W: Scale 60-80% based on power  
+        local scale_factor=$(( (gpu_power - GPU_POWER_MEDIUM) * 20 / (GPU_POWER_HIGH - GPU_POWER_MEDIUM) + 60 ))
+        echo $(( scale_factor * 255 / 100 ))
+    elif [[ $gpu_power -ge $GPU_POWER_LOW ]]; then
+        # 150-299W: Scale 40-60% based on power
+        local scale_factor=$(( (gpu_power - GPU_POWER_LOW) * 20 / (GPU_POWER_MEDIUM - GPU_POWER_LOW) + 40 ))
+        echo $(( scale_factor * 255 / 100 ))
+    elif [[ $gpu_power -ge $GPU_POWER_IDLE ]]; then
+        # 30-149W: Scale 30-40% based on power
+        local scale_factor=$(( (gpu_power - GPU_POWER_IDLE) * 10 / (GPU_POWER_LOW - GPU_POWER_IDLE) + 30 ))
         echo $(( scale_factor * 255 / 100 ))
     else
-        # Use GPU fan speed as reference for temps under 50°C
-        echo $(( gpu_fan * 255 / 100 ))
+        # Under 30W: Minimum fans (30%)
+        echo $MIN_CHASSIS_FAN_SPEED
     fi
 }
 
@@ -86,8 +111,10 @@ if [[ ! -d "$HWMON_PATH" ]]; then
     exit 1
 fi
 
-echo -e "${GREEN}🌪️  GPU-Chassis Fan Controller Started${NC}"
-echo -e "${BLUE}GPU Temperature Threshold: ${GPU_TEMP_THRESHOLD}°C${NC}"
+echo -e "${GREEN}🌪️  GPU-Chassis Fan Controller Started (Power-Based)${NC}"
+echo -e "${BLUE}Emergency Temperature Threshold: ${GPU_TEMP_THRESHOLD}°C${NC}"
+echo -e "${BLUE}Power Zones: ${GPU_POWER_IDLE}W-${GPU_POWER_LOW}W-${GPU_POWER_MEDIUM}W-${GPU_POWER_HIGH}W-${GPU_POWER_MAX}W${NC}"
+echo -e "${BLUE}Fan Scaling: 30%-40%-60%-80%-100%${NC}"
 echo -e "${BLUE}Check Interval: ${CHECK_INTERVAL} seconds${NC}"
 echo -e "${YELLOW}Press Ctrl+C to stop and restore automatic fan control${NC}"
 echo ""
@@ -112,8 +139,8 @@ while true; do
     POWER_DRAW=$(echo $POWER_DRAW | tr -d ' ')
     MEM_USED=$(echo $MEM_USED | tr -d ' ')
     
-    # Calculate appropriate chassis fan speed
-    CHASSIS_PWM=$(calculate_fan_speed $GPU_TEMP $GPU_FAN_SPEED)
+    # Calculate appropriate chassis fan speed based on power consumption
+    CHASSIS_PWM=$(calculate_fan_speed $GPU_TEMP $GPU_FAN_SPEED $POWER_DRAW)
     CHASSIS_PERCENT=$(( CHASSIS_PWM * 100 / 255 ))
     
     # Set chassis fan speed
@@ -122,16 +149,26 @@ while true; do
     # Get current chassis fan speeds for display
     CHASSIS_SPEEDS=$(get_chassis_fan_speeds)
     
-    # Determine temperature color
+    # Determine power zone and status
+    POWER_INT=${POWER_DRAW%.*}  # Remove decimal part
     if [[ $GPU_TEMP -ge $GPU_TEMP_THRESHOLD ]]; then
         TEMP_COLOR=$RED
-        STATUS="🔥 HIGH TEMP - MAX FANS"
-    elif [[ $GPU_TEMP -ge 60 ]]; then
+        STATUS="🔥 EMERGENCY - TEMP OVERRIDE"
+    elif [[ $POWER_INT -ge $GPU_POWER_MAX ]]; then
+        TEMP_COLOR=$RED
+        STATUS="⚡ MAXIMUM POWER"
+    elif [[ $POWER_INT -ge $GPU_POWER_HIGH ]]; then
         TEMP_COLOR=$YELLOW
-        STATUS="⚠️  ELEVATED TEMP"
+        STATUS="🚀 HIGH POWER"
+    elif [[ $POWER_INT -ge $GPU_POWER_MEDIUM ]]; then
+        TEMP_COLOR=$YELLOW
+        STATUS="⚠️  MEDIUM POWER"
+    elif [[ $POWER_INT -ge $GPU_POWER_LOW ]]; then
+        TEMP_COLOR=$GREEN
+        STATUS="📈 LOW POWER"
     else
         TEMP_COLOR=$GREEN
-        STATUS="✅ NORMAL TEMP"
+        STATUS="💤 IDLE/MINIMAL"
     fi
     
     # Display current status

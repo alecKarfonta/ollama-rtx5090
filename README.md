@@ -123,19 +123,23 @@ docker compose logs -f ollama
 
 ## Dynamic Fan Control
 
-This deployment includes **intelligent chassis fan control** that automatically adjusts fan speeds based on GPU temperature and load.
+This deployment includes **intelligent chassis fan control** that automatically adjusts fan speeds based on **GPU power consumption** with temperature safety override.
 
 ### Features
-- **Temperature Zones**: Scales fan speed from 30% to 100% based on GPU temperature
+- **Power-Based Scaling**: Immediate response to GPU load changes via power monitoring
+- **Temperature Safety**: Emergency override at 70°C+ GPU temperature
 - **Real-time Monitoring**: Updates every 5 seconds  
-- **Emergency Cooling**: Maximum fans at 70°C+ GPU temperature
+- **Responsive Control**: More immediate than temperature-based systems
 - **Automatic Restoration**: Returns to motherboard control on service stop
 
-### Temperature Response
-- **Under 50°C**: Chassis fans match GPU fan percentage
-- **50-59°C**: Scale 50-75% based on temperature  
-- **60-69°C**: Scale 75-100% based on temperature
-- **70°C+**: 🔥 **Maximum chassis fans** (100%)
+### Power-Based Response Zones
+- **Under 30W**: 💤 Minimum fans (30%) - Idle/sleep
+- **30-149W**: 📈 Scale 30-40% - Light usage
+- **150-299W**: ⚠️ Scale 40-60% - Medium load
+- **300-449W**: 🚀 Scale 60-80% - Heavy load  
+- **450-549W**: ⚡ Scale 80-100% - High power
+- **550W+**: ⚡ Maximum fans (100%) - Peak performance
+- **70°C+**: 🔥 **Temperature override** (100%) - Emergency cooling
 
 ### Service Management
 ```bash
