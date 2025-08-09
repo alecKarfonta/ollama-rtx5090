@@ -16,7 +16,8 @@ OLLAMA_BASE_URL = "https://mlapi.us/vllm"  # Authenticated endpoint
 OLLAMA_NATIVE_API = f"{OLLAMA_BASE_URL}/api"
 OLLAMA_OPENAI_API = f"{OLLAMA_BASE_URL}/v1"
 #DEFAULT_MODEL = "qwen3:30b-a3b-instruct-2507-q4_K_M"
-DEFAULT_MODEL = "qwen3:gpu-200k"  # 200K context model - ABSOLUTE MAXIMUM
+#DEFAULT_MODEL = "gpt-oss:reasoning"  # 200K context model - ABSOLUTE MAXIMUM
+DEFAULT_MODEL = "qwen3:200k"  # 200K context model - ABSOLUTE MAXIMUM
 TIMEOUT = 600  # Extended timeout for very large context tests (10 minutes)
 
 # API Key for authentication

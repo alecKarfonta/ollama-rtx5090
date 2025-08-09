@@ -13,10 +13,10 @@ RUN apt-get update && apt-get install -y \
 # Install Ollama
 RUN curl -fsSL https://ollama.com/install.sh | sh
 
-# Create ollama user and directories
+# Create ollama user and directories with proper permissions
 RUN useradd -m -u 1000 ollama && \
-    mkdir -p /root/.ollama && \
-    chown -R ollama:ollama /root/.ollama
+    mkdir -p /home/ollama/.ollama/models && \
+    chown -R ollama:ollama /home/ollama/.ollama
 
 # Copy the start script
 COPY start.sh /start.sh

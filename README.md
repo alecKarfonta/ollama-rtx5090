@@ -23,15 +23,17 @@ curl http://localhost:11434/v1/models
 - **OpenAI API Compatible**: Works with OpenAI clients at `/v1/` endpoints
 - **262K Context**: Qwen3 30B model with extended context length
 - **Multiple Models**: Support for different context lengths
-- **Persistent Storage**: Models stored in `~/.ollama`
+- **Persistent Storage**: Models cached in Docker volume `ollama_models`
 
 ## Models Available
 
 After startup, the following models will be available:
 
-1. **qwen3:262k** - Qwen3 30B with 262K context (main model)
-2. **qwen3:30b-a3b-instruct-2507-q4_K_M** - Base model
-3. **qwen2.5-coder:14b-instruct-q4_K_M** - For 128K context (optional)
+1. **qwen3:200k** - Qwen3 30B with 200K context (primary model)
+2. **qwen3:30b-a3b-instruct-2507-q4_K_M** - Base Qwen3 model
+3. **hf.co/unsloth/gpt-oss-20b-GGUF:Q4_K_M** - OpenAI's open-weight reasoning model (21B params)
+4. **gpt-oss:reasoning** - GPT-OSS optimized with high reasoning level
+5. **qwen2.5-coder:14b-instruct-q4_K_M** - For coding tasks (optional)
 
 ## API Endpoints
 
@@ -58,11 +60,11 @@ client = openai.OpenAI(
     api_key="ollama"  # Required but can be anything
 )
 
-# Chat completion
+# Chat completion with GPT-OSS reasoning model
 response = client.chat.completions.create(
-    model="qwen3:262k",
+    model="gpt-oss:reasoning",
     messages=[
-        {"role": "user", "content": "Hello! Write a simple hello world in Python."}
+        {"role": "user", "content": "Hello! Write a simple hello world in Python and explain the reasoning behind your approach."}
     ],
     max_tokens=150
 )
@@ -75,17 +77,47 @@ print(response.choices[0].message.content)
 # List models
 curl http://localhost:11434/v1/models
 
-# Chat completion
+# Chat completion with GPT-OSS
 curl -X POST http://localhost:11434/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{
-        "model": "qwen3:262k",
+        "model": "gpt-oss:reasoning",
         "messages": [
-            {"role": "user", "content": "Hello! Write a simple hello world in Python."}
+            {"role": "user", "content": "Solve this problem step by step: What is 15% of 240?"}
         ],
-        "max_tokens": 150
+        "max_tokens": 200
     }'
 ```
+
+## Model Caching & Storage
+
+Models are automatically cached in a persistent Docker volume to avoid repeated downloads:
+
+- **Storage Location**: Docker volume `ollama_models` 
+- **Automatic Caching**: Models download once, persist across container restarts
+- **Space Usage**: Large models (~12-30GB each) are cached locally
+
+### Managing Model Cache
+```bash
+# View cached models and storage usage
+docker compose exec ollama ollama list
+docker system df -v
+
+# Check specific volume usage
+docker volume inspect ollama-rtx5090_ollama_models
+
+# Backup models (optional)
+docker run --rm -v ollama-rtx5090_ollama_models:/source -v /backup:/backup alpine tar czf /backup/ollama-models.tar.gz -C /source .
+
+# Restore models (optional)  
+docker run --rm -v ollama-rtx5090_ollama_models:/target -v /backup:/backup alpine tar xzf /backup/ollama-models.tar.gz -C /target
+```
+
+### Model Storage Benefits
+- ✅ **No Re-downloads**: Models persist across container restarts
+- ✅ **Fast Startup**: Skip download time on subsequent runs  
+- ✅ **Space Efficient**: Each model downloaded only once
+- ✅ **Version Control**: Keeps specific model versions cached
 
 ## Testing Scripts
 
@@ -205,31 +237,100 @@ nvidia-container-toolkit --version
 
 ### Model Loading Issues
 ```bash
-# Check available space
-df -h ~/.ollama
+# Check available space in Docker volume
+docker system df -v
 
 # Clear model cache
 docker compose down
-sudo rm -rf ~/.ollama/models/*
+docker volume rm ollama-rtx5090_ollama_models
 docker compose up -d
 ```
 
+## GPT-OSS-20B Model Card
+
+**GPT-OSS-20B** is OpenAI's open-weight model designed for powerful reasoning, agentic tasks, and versatile developer use cases.
+
+### Model Details
+- **Parameters**: 21B total (3.6B active parameters)
+- **Architecture**: Mixture-of-Experts (MoE) with native MXFP4 quantization
+- **License**: Apache 2.0 (permissive, commercial-friendly)
+- **Training**: Harmony response format (required for proper operation)
+- **Context Length**: Up to 200K tokens (in our optimized version)
+
+### Key Features
+- **🧠 Configurable Reasoning**: Adjustable effort levels (low/medium/high)
+- **🔍 Chain-of-Thought**: Full access to reasoning process for debugging
+- **🛠️ Agentic Capabilities**: Native function calling, web browsing, code execution
+- **⚡ RTX 5090 Optimized**: Runs efficiently within 16GB VRAM
+- **🎯 Fine-tunable**: Full parameter customization for specialized use cases
+
+### Reasoning Levels
+Set reasoning level in system prompts:
+- **Low**: `"Reasoning: low"` - Fast responses for general dialogue
+- **Medium**: `"Reasoning: medium"` - Balanced speed and detail  
+- **High**: `"Reasoning: high"` - Deep, detailed analysis (default in gpt-oss:reasoning)
+
+### Available Variants
+1. **gpt-oss:20b** - Base model from Ollama registry
+2. **gpt-oss:reasoning** - Our optimized version with:
+   - High reasoning level enabled by default
+   - 200K context window
+   - All GPU layers for maximum performance
+   - RTX 5090 optimized parameters
+
+### Use Cases
+- **Complex Problem Solving**: Mathematical, logical, and analytical tasks
+- **Code Generation**: With reasoning explanations
+- **Research & Analysis**: Deep investigation of topics
+- **Educational Content**: Step-by-step explanations
+- **Agentic Applications**: Tool use and multi-step workflows
+
+### Performance Characteristics
+- **Memory Usage**: ~12-16GB VRAM (Q4_K_M quantization)
+- **Speed**: Faster than larger models, optimized for real-time use
+- **Quality**: High reasoning capability with transparency
+
+### Source & Downloads
+- **Original Model**: [openai/gpt-oss-20b](https://huggingface.co/openai/gpt-oss-20b)
+- **GGUF Quantized**: [unsloth/gpt-oss-20b-GGUF](https://huggingface.co/unsloth/gpt-oss-20b-GGUF)
+- **Ollama Command**: `ollama run hf.co/unsloth/gpt-oss-20b-GGUF:Q4_K_M`
+
 ## Model Configurations
 
-### qwen3:262k (Primary)
+### qwen3:200k (Primary)
 - **Base**: qwen3:30b-a3b-instruct-2507-q4_K_M
-- **Context**: 262,000 tokens
+- **Context**: 200,000 tokens
 - **Quantization**: Q4_K_M
 - **VRAM**: ~30GB
 
+### hf.co/unsloth/gpt-oss-20b-GGUF:Q4_K_M (OpenAI Reasoning)
+- **Base**: OpenAI's gpt-oss-20b from Unsloth GGUF repository
+- **Parameters**: 21B total (3.6B active)
+- **Context**: Default context window
+- **Quantization**: Q4_K_M (GGUF)
+- **VRAM**: ~12-16GB
+
+### gpt-oss:reasoning (Optimized)
+- **Base**: hf.co/unsloth/gpt-oss-20b-GGUF:Q4_K_M
+- **Context**: 200,000 tokens
+- **Reasoning Level**: High (configured in system prompt)
+- **GPU Layers**: All layers on GPU
+- **VRAM**: ~12-16GB
+
 ### Alternative Models
-Edit `start.sh` to pull different models:
+Edit `start.sh` to pull additional models:
 ```bash
 # For smaller memory usage
 ollama pull qwen2.5:7b-instruct-q4_K_M
 
-# For coding tasks
+# For coding tasks  
 ollama pull qwen2.5-coder:14b-instruct-q4_K_M
+
+# For larger reasoning tasks (if you have more VRAM)
+ollama pull gpt-oss:120b
+
+# Other reasoning models
+ollama pull llama3.3:70b-instruct-q4_K_M
 ```
 
 ## Security Notes

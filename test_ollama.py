@@ -11,10 +11,10 @@ import os
 from typing import Dict, Any
 
 # Configuration
-OLLAMA_BASE_URL = "http://localhost:8080"  # From docker-compose.yaml
+OLLAMA_BASE_URL = "http://localhost:8600"  # From docker-compose.yaml
 OLLAMA_NATIVE_API = f"{OLLAMA_BASE_URL}/api"
 OLLAMA_OPENAI_API = f"{OLLAMA_BASE_URL}/v1" 
-DEFAULT_MODEL = "qwen3:262k"  # From start.sh
+DEFAULT_MODEL = "qwen3:200k"  # From start.sh
 TIMEOUT = 120
 
 def get_headers():

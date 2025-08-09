@@ -12,7 +12,7 @@ GPU_POWER_HIGH=450             # High load threshold in Watts
 GPU_POWER_MAX=550              # Maximum expected power in Watts
 MAX_CHASSIS_FAN_SPEED=255      # Maximum PWM value (100%)
 MIN_CHASSIS_FAN_SPEED=77       # Minimum PWM value (~30%)
-HWMON_PATH="/sys/class/hwmon/hwmon4"
+HWMON_PATH="/sys/class/hwmon/hwmon3"
 CHECK_INTERVAL=5               # Check every 5 seconds
 
 # Colors for output
@@ -97,6 +97,59 @@ cleanup() {
 # Set up signal handlers
 trap cleanup SIGINT SIGTERM
 
+# Function to load NCT6775 driver if not already loaded
+load_nct6775_driver() {
+    if ! lsmod | grep -q nct6775; then
+        echo -e "${YELLOW}NCT6775 driver not loaded. Loading driver...${NC}"
+        if modprobe nct6775 2>/dev/null; then
+            echo -e "${GREEN}✅ NCT6775 driver loaded successfully${NC}"
+            sleep 2  # Give driver time to initialize
+        else
+            echo -e "${RED}❌ Failed to load NCT6775 driver${NC}"
+            echo "You may need to install the driver or check hardware compatibility"
+            return 1
+        fi
+    else
+        echo -e "${GREEN}✅ NCT6775 driver already loaded${NC}"
+    fi
+    return 0
+}
+
+# Function to detect the correct NCT hardware monitor path
+detect_nct6775_hwmon_path() {
+    local hwmon_path=""
+    
+    # Look for NCT hardware monitor paths (supports nct6775, nct6798, etc.)
+    for hwmon in /sys/class/hwmon/hwmon*; do
+        if [[ -e "$hwmon/name" ]]; then
+            local name=$(cat "$hwmon/name" 2>/dev/null)
+            if [[ "$name" =~ ^nct67[0-9][0-9]$ ]]; then
+                # Verify it has the required PWM controls
+                if [[ -e "$hwmon/pwm1" && -e "$hwmon/pwm1_enable" ]]; then
+                    hwmon_path="$hwmon"
+                    echo -e "${GREEN}✅ Found NCT hardware monitor ($name): $hwmon_path${NC}" >&2
+                    break
+                fi
+            fi
+        fi
+    done
+    
+    if [[ -z "$hwmon_path" ]]; then
+        echo -e "${RED}❌ No NCT hardware monitor found${NC}"
+        echo "Available hardware monitors:"
+        for hwmon in /sys/class/hwmon/hwmon*; do
+            if [[ -e "$hwmon/name" ]]; then
+                local name=$(cat "$hwmon/name" 2>/dev/null)
+                echo "  $hwmon: $name"
+            fi
+        done
+        return 1
+    fi
+    
+    echo "$hwmon_path"
+    return 0
+}
+
 # Check if running as root or with sudo
 if [[ $EUID -ne 0 ]]; then
     echo -e "${RED}This script needs to run with sudo to control fans${NC}"
@@ -104,11 +157,26 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Check if hwmon path exists
-if [[ ! -d "$HWMON_PATH" ]]; then
-    echo -e "${RED}Hardware monitor path not found: $HWMON_PATH${NC}"
-    echo "Make sure the nct6775 driver is loaded: sudo modprobe nct6775"
+# Load NCT6775 driver if needed
+if ! load_nct6775_driver; then
     exit 1
+fi
+
+# Auto-detect the correct hardware monitor path
+echo -e "${BLUE}🔍 Auto-detecting NCT6775 hardware monitor path...${NC}"
+DETECTED_HWMON_PATH=$(detect_nct6775_hwmon_path)
+if [[ $? -eq 0 ]]; then
+    HWMON_PATH="$DETECTED_HWMON_PATH"
+    echo -e "${GREEN}Using detected path: $HWMON_PATH${NC}"
+else
+    echo -e "${YELLOW}Auto-detection failed. Trying configured path: $HWMON_PATH${NC}"
+    # Check if the originally configured hwmon path exists
+    if [[ ! -d "$HWMON_PATH" ]]; then
+        echo -e "${RED}Hardware monitor path not found: $HWMON_PATH${NC}"
+        echo "Available hardware monitors:"
+        ls -la /sys/class/hwmon/ 2>/dev/null || echo "None found"
+        exit 1
+    fi
 fi
 
 echo -e "${GREEN}🌪️  GPU-Chassis Fan Controller Started (Power-Based)${NC}"
